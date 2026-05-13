@@ -1,0 +1,6 @@
+streamlit
+blind-watermark
+opencv-python-headless
+PyWavelets
+numpy
+Pillow
