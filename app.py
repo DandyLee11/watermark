@@ -3,84 +3,90 @@ import numpy as np
 from PIL import Image
 import io
 import os
+import cv2
 
-# ========== 核心：让程序认得你刚搬进去的文件夹 ==========
+# ========== 核心：导入你仓库里的文件夹 ==========
 try:
     from blind_watermark import WaterMark
 except ImportError:
-    st.error("程序还是找不到文件夹，请检查你的文件夹名是否叫 blind_watermark (全小写+下划线)")
+    st.error("找不到 blind_watermark 文件夹，请确认文件夹名正确且包含 __init__.py")
 
 # 页面配置
 st.set_page_config(page_title="GITO 品牌保护工具", layout="wide")
-st.title("🛡️ GITO 专用：原版算法盲水印 (guofei9987)")
+st.title("🛡️ GITO 专用：频域盲水印 (兼容修复版)")
 
-# 算法密钥 (固定，提取时也用这个)
+# 算法密钥 (固定)
 PWD_IMG = 1
 PWD_WM = 1
 
 def process_embed(file, text):
-    # 记录原图格式，防止体积暴涨
+    # 1. 预处理图片
     img = Image.open(file)
     orig_format = img.format
-    
-    # 1. 保存临时原图
-    temp_in = "temp_in" + (".jpg" if orig_format == "JPEG" else ".png")
-    with open(temp_in, "wb") as f:
-        f.write(file.getvalue())
+    temp_in = "temp_in.png"
+    img.save(temp_in)
 
-    # 2. 调用你文件夹里的算法进行嵌入
+    # 2. 初始化算法并嵌入
     bwm = WaterMark(password_img=PWD_IMG, password_wm=PWD_WM)
-    bwm.read_img(temp_in)
-    bwm.read_wm(text, mode='str')
-    bwm.embed("temp_out.png") # 算法生成过程中推荐用png保证精度
     
-    # 3. 压回原格式并控制体积
+    # 【兼容性修复】：手动读取图片并赋值给对象，跳过可能报错的 read_img 函数
+    bwm.img = cv2.imread(temp_in)
+    
+    bwm.read_wm(text, mode='str')
+    bwm.embed("temp_out.png")
+    
+    # 3. 控制导出体积
     wm_img = Image.open("temp_out.png")
     buf = io.BytesIO()
     
     if orig_format in ["JPG", "JPEG"]:
-        # 质量设为 85，体积增加极小且能保住水印
+        # 质量设为 85，既保住水印又控制体积
         wm_img.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
         ext = "jpg"
     else:
-        wm_img.save(buf, format="PNG")
+        wm_img.save(buf, format="PNG", optimize=True)
         ext = "png"
     
     return buf.getvalue(), len(text), ext
 
 def process_extract(file, wm_len):
     # 保存待检测图
-    with open("temp_ext.png", "wb") as f:
+    temp_ext = "temp_ext.png"
+    with open(temp_ext, "wb") as f:
         f.write(file.getvalue())
     
     bwm = WaterMark(password_img=PWD_IMG, password_wm=PWD_WM)
-    # 提取时必须要传正确的长度 wm_shape
-    return bwm.extract("temp_ext.png", wm_shape=wm_len, mode='str')
+    
+    # 【兼容性修复】：手动读取待测图并赋值给属性
+    bwm.img_wm = cv2.imread(temp_ext)
+    
+    # 提取：传入当初的字符长度
+    return bwm.extract(wm_shape=wm_len, mode='str')
 
 # 界面展示
 mode = st.radio("功能切换", ["添加盲水印", "提取盲水印"])
 
 if mode == "添加盲水印":
     upload = st.file_uploader("上传原图", type=["jpg", "jpeg", "png"])
-    text = st.text_input("水印内容 (建议 12 位以内)", "GITO-2026")
+    text = st.text_input("水印内容 (如：GITO-2026)", "GITO-2026")
     
-    if upload and st.button("一键无损嵌入"):
-        with st.spinner("正在频域加密中..."):
+    if upload and st.button("一键加密"):
+        with st.spinner("频域变换处理中..."):
             res_bytes, length, ext = process_embed(upload, text)
-            st.image(res_bytes, caption="嵌入成功")
-            st.success(f"⚠️ 提取关键提示：提取此图时，长度请填入 {length}")
-            st.download_button("下载图片", res_bytes, f"protected_img.{ext}")
+            st.image(res_bytes, caption="已嵌入水印")
+            st.success(f"⚠️ 提取关键提示：提取此图时，字符长度请填入 {length}")
+            st.download_button("保存保护后的图片", res_bytes, f"gito_protected.{ext}")
 
 else:
     upload = st.file_uploader("上传待检测图", type=["jpg", "jpeg", "png"])
-    wm_len = st.number_input("请输入当初设定的水印长度", value=9)
+    wm_len = st.number_input("请输入当初设定的水印长度", min_value=1, value=9)
     
-    if upload and st.button("开始深度解析"):
+    if upload and st.button("开始提取"):
         try:
             res = process_extract(upload, wm_len)
             if res:
                 st.success(f"✅ 成功溯源信息：{res}")
             else:
-                st.error("未能检测到水印。")
+                st.error("未能检测到水印信息。")
         except Exception as e:
-            st.error("解析失败：长度不符或图片经过极端改动。")
+            st.error(f"解析出错：请核对长度参数。详细错误：{str(e)}")
