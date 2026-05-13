@@ -83,7 +83,7 @@ if mode == "添加盲水印":
             buf = io.BytesIO()
             if orig_format in ["JPG", "JPEG"]:
                 # 调低 quality 至 80，这通常能让文件大小与原图持平
-                wm_img.save(buf, format="JPEG", quality=80, subsampling=0, optimize=True)
+                wm_img.save(buf, format="JPEG", quality=70, subsampling=2, optimize=True)
                 ext = ".jpg"
             else:
                 wm_img.save(buf, format="PNG")
