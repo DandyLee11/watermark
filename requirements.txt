@@ -1,0 +1,5 @@
+streamlit
+invisible-watermark
+pillow
+opencv-python-headless
+numpy
